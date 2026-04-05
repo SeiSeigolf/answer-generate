@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import * as pdfjsLib from "pdfjs-dist";
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf";
 
+// iOS Safari対応: legacyビルドのworkerを使用
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
+  "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
   import.meta.url
 ).toString();
 
@@ -35,21 +36,52 @@ const MED_HEAVY = [
 ];
 
 async function extractPdfPages(file) {
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  // iOS Safari対応: FileReaderでArrayBufferを取得
+  const arrayBuffer = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(new Error("ファイル読み込みに失敗しました"));
+    reader.readAsArrayBuffer(file);
+  });
+
+  // Uint8Arrayに変換（iOS SafariはArrayBufferを直接渡すと失敗する場合がある）
+  const typedArray = new Uint8Array(arrayBuffer);
+
+  const loadingTask = pdfjsLib.getDocument({
+    data: typedArray,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    useSystemFonts: true,
+  });
+
+  const pdf = await loadingTask.promise;
   const pages = [];
+
   for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const text = textContent.items.map(item => item.str).join(" ").replace(/\s+/g, " ").trim();
-    if (text.length > 10) {
-      pages.push({
-        id: `pdf_${Date.now()}_p${i}`,
-        pageNumber: i,
-        heading: "",
-        content: text,
-        tags: MED_HEAVY.filter(k => text.includes(k)).slice(0, 10),
-      });
+    try {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent({ includeMarkedContent: false });
+
+      let textParts = [];
+      for (let j = 0; j < textContent.items.length; j++) {
+        const item = textContent.items[j];
+        if (item && typeof item.str === "string") {
+          textParts.push(item.str);
+        }
+      }
+      const text = textParts.join(" ").replace(/\s+/g, " ").trim();
+
+      if (text.length > 10) {
+        pages.push({
+          id: "pdf_" + Date.now() + "_p" + i,
+          pageNumber: i,
+          heading: "",
+          content: text,
+          tags: MED_HEAVY.filter(k => text.includes(k)).slice(0, 10),
+        });
+      }
+    } catch (pageErr) {
+      console.warn("ページ " + i + " の読み込みをスキップ:", pageErr);
     }
   }
   return pages;
