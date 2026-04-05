@@ -35,8 +35,21 @@ const MED_HEAVY = [
   "診断","鑑別","治療","禁忌","適応","検査","所見","症状","病態","機序","定義","分類","予後","手術","投薬",
 ];
 
-async function extractPdfPages(file) {
-  // iOS Safari対応: FileReaderでArrayBufferを取得
+async function renderPdfPageToBase64(pdf, pageNum, scale=1.5) {
+  const page = await pdf.getPage(pageNum);
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.floor(viewport.width);
+  canvas.height = Math.floor(viewport.height);
+  const ctx = canvas.getContext("2d");
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  // JPEG変換（base64、品質0.85）
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+  return dataUrl.split(",")[1]; // base64部分のみ
+}
+
+async function extractPdfPagesByVision(file, onProgress) {
+  // Step1: FileReaderでArrayBuffer取得（iOS Safari対応）
   const arrayBuffer = await new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => resolve(e.target.result);
@@ -44,33 +57,33 @@ async function extractPdfPages(file) {
     reader.readAsArrayBuffer(file);
   });
 
-  // Uint8Arrayに変換（iOS SafariはArrayBufferを直接渡すと失敗する場合がある）
   const typedArray = new Uint8Array(arrayBuffer);
-
-  const loadingTask = pdfjsLib.getDocument({
+  const pdf = await pdfjsLib.getDocument({
     data: typedArray,
     useWorkerFetch: false,
     isEvalSupported: false,
     useSystemFonts: true,
-  });
+  }).promise;
 
-  const pdf = await loadingTask.promise;
+  const totalPages = pdf.numPages;
   const pages = [];
 
-  for (let i = 1; i <= pdf.numPages; i++) {
+  for (let i = 1; i <= totalPages; i++) {
+    if (onProgress) onProgress(i, totalPages);
     try {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent({ includeMarkedContent: false });
+      // Step2: ページをcanvasに描画してbase64化
+      const imageBase64 = await renderPdfPageToBase64(pdf, i, 1.5);
 
-      let textParts = [];
-      for (let j = 0; j < textContent.items.length; j++) {
-        const item = textContent.items[j];
-        if (item && typeof item.str === "string") {
-          textParts.push(item.str);
-        }
-      }
-      const text = textParts.join(" ").replace(/\s+/g, " ").trim();
+      // Step3: Claude vision APIでテキスト抽出
+      const res = await fetch("/api/extract-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64, pageNumber: i, totalPages }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "API error");
 
+      const text = (data.text || "").trim();
       if (text.length > 10) {
         pages.push({
           id: "pdf_" + Date.now() + "_p" + i,
@@ -81,8 +94,48 @@ async function extractPdfPages(file) {
         });
       }
     } catch (pageErr) {
-      console.warn("ページ " + i + " の読み込みをスキップ:", pageErr);
+      console.warn("ページ " + i + " スキップ:", pageErr);
     }
+  }
+  return pages;
+}
+
+// テキスト直接抽出（テキストPDF用フォールバック）
+async function extractPdfPagesText(file) {
+  const arrayBuffer = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(new Error("ファイル読み込みに失敗しました"));
+    reader.readAsArrayBuffer(file);
+  });
+  const typedArray = new Uint8Array(arrayBuffer);
+  const pdf = await pdfjsLib.getDocument({
+    data: typedArray,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    useSystemFonts: true,
+  }).promise;
+  const pages = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    try {
+      const page = await pdf.getPage(i);
+      const textContent = await page.getTextContent({ includeMarkedContent: false });
+      let textParts = [];
+      for (let j = 0; j < textContent.items.length; j++) {
+        const item = textContent.items[j];
+        if (item && typeof item.str === "string") textParts.push(item.str);
+      }
+      const text = textParts.join(" ").replace(/\s+/g, " ").trim();
+      if (text.length > 10) {
+        pages.push({
+          id: "pdf_" + Date.now() + "_p" + i,
+          pageNumber: i,
+          heading: "",
+          content: text,
+          tags: MED_HEAVY.filter(k => text.includes(k)).slice(0, 10),
+        });
+      }
+    } catch (e) { console.warn("skip page", i, e); }
   }
   return pages;
 }
@@ -168,28 +221,75 @@ function ScoreBar({ score }) {
 
 function PdfUploadButton({ onDone }) {
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [error, setError] = useState("");
+  const [mode, setMode] = useState("vision"); // "vision" | "text"
+
   async function handleFile(e) {
-    const file = e.target.files[0]; if (!file) return;
+    const file = e.target.files[0];
+    if (!file) return;
     if (file.type !== "application/pdf") { setError("PDFを選択してください"); return; }
-    setLoading(true); setError("");
+    setLoading(true); setError(""); setProgress({ current: 0, total: 0 });
     try {
-      const pages = await extractPdfPages(file);
-      if (!pages.length) { setError("テキストを抽出できませんでした（画像PDFの可能性があります）"); setLoading(false); return; }
-      onDone({ id: uid(), title: file.name.replace(/\.pdf$/i, ""), courseName: file.name.replace(/\.pdf$/i, ""), lectureNumber: 1, year: new Date().getFullYear(), color: PURPLE, pages });
+      let pages = [];
+      if (mode === "vision") {
+        // Claude visionでOCR抽出
+        pages = await extractPdfPagesByVision(file, (cur, total) => {
+          setProgress({ current: cur, total });
+        });
+      } else {
+        // テキスト直接抽出（テキストPDF用）
+        pages = await extractPdfPagesText(file);
+      }
+      if (!pages.length) {
+        setError("テキストを抽出できませんでした。別のモードを試してください。");
+        setLoading(false); return;
+      }
+      onDone({
+        id: "id_" + Math.random().toString(36).slice(2),
+        title: file.name.replace(/\.pdf$/i, ""),
+        courseName: file.name.replace(/\.pdf$/i, ""),
+        lectureNumber: 1,
+        year: new Date().getFullYear(),
+        color: "#534AB7",
+        pages,
+      });
     } catch (err) { setError("読み込み失敗: " + err.message); }
-    setLoading(false); e.target.value = "";
+    setLoading(false);
+    e.target.value = "";
   }
+
   return (
-    <div>
-      <label style={{ display: "block", width: "100%", padding: "10px 0", border: "0.5px dashed #a78bfa", borderRadius: 8, fontSize: 12, color: PURPLE, background: "#f5f3ff", cursor: loading ? "not-allowed" : "pointer", textAlign: "center", fontWeight: 600, opacity: loading ? 0.6 : 1, boxSizing: "border-box" }}>
-        {loading ? "📄 読み込み中…" : "📄 PDFをアップロード"}
+    <div style={{ marginBottom: 4 }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+        {[["vision", "✨ AI読取（画像PDF対応）"], ["text", "📝 テキスト抽出"]].map(([k, v]) => (
+          <button key={k} onClick={() => setMode(k)} disabled={loading}
+            style={{ flex: 1, padding: "5px 4px", border: "0.5px solid " + (mode === k ? "#a78bfa" : "#e5e7eb"), borderRadius: 7, fontSize: 10, fontWeight: 600, cursor: "pointer", background: mode === k ? "#f5f3ff" : "#fff", color: mode === k ? "#534AB7" : "#aaa", fontFamily: "inherit" }}>
+            {v}
+          </button>
+        ))}
+      </div>
+      <label style={{ display: "block", width: "100%", padding: "10px 0", border: "0.5px dashed " + (loading ? "#ccc" : "#a78bfa"), borderRadius: 8, fontSize: 12, color: loading ? "#aaa" : "#534AB7", background: loading ? "#fafafa" : "#f5f3ff", cursor: loading ? "not-allowed" : "pointer", textAlign: "center", fontWeight: 600, boxSizing: "border-box" }}>
+        {loading
+          ? progress.total > 0
+            ? "📄 読み取り中… " + progress.current + "/" + progress.total + "ページ"
+            : "📄 読み込み中…"
+          : "📄 PDFをアップロード"}
         <input type="file" accept="application/pdf" onChange={handleFile} disabled={loading} style={{ display: "none" }} />
       </label>
+      {loading && progress.total > 0 && (
+        <div style={{ height: 4, background: "#e5e7eb", borderRadius: 2, marginTop: 6 }}>
+          <div style={{ height: 4, width: (progress.current / progress.total * 100) + "%", background: "#534AB7", borderRadius: 2, transition: "width 0.3s" }} />
+        </div>
+      )}
+      {mode === "vision" && !loading && (
+        <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 4 }}>Claude APIでOCR抽出（APIキー必要）</div>
+      )}
       {error && <div style={{ fontSize: 11, color: "#e24b4a", marginTop: 4 }}>{error}</div>}
     </div>
   );
 }
+
 
 function DocModal({ doc, onClose, onSave }) {
   const [form, setForm] = useState(doc || { id: uid(), title: "", courseName: "", lectureNumber: 1, year: 2024, color: GREEN, pages: [] });
