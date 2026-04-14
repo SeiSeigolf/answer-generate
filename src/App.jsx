@@ -1,10 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+// iOS Safari対応: import.meta.urlを使わず静的パスで指定
+pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 // ── Sample Data ───────────────────────────────────────────────────────────────
 const SAMPLE_DOCS = [

@@ -8,5 +8,6 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: ['pdfjs-dist/legacy/build/pdf'],
+    exclude: ['pdfjs-dist/legacy/build/pdf.worker.min.mjs'],
   },
 })
