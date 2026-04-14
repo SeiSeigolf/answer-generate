@@ -1,28 +1,28 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf";
 
-// iOS Safari対応: legacyビルドのworkerを使用
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
   import.meta.url
 ).toString();
 
+// ── Sample Data ───────────────────────────────────────────────────────────────
 const SAMPLE_DOCS = [
   {
     id: "bio3", title: "生化学 第3回 糖代謝", courseName: "生化学",
     lectureNumber: 3, year: 2024, color: "#0F6E56",
     pages: [
-      { id: "b3p12", pageNumber: 12, heading: "解糖系の概要", content: "解糖系はグルコースをピルビン酸へ変換し、ATPとNADHを産生する。1分子のグルコースから正味2ATP、2NADHが生成される。細胞質で進行する。", tags: ["解糖系", "グルコース", "ATP", "NADH", "ピルビン酸"] },
-      { id: "b3p13", pageNumber: 13, heading: "律速酵素", content: "ホスホフルクトキナーゼ-1（PFK-1）は解糖系の律速酵素である。ATPにより阻害され、AMPにより活性化される。フルクトース-2,6-ビスリン酸はPFK-1の最も強力なアロステリック活性化因子であり、インスリンにより産生が促進される。", tags: ["PFK-1", "律速酵素", "アロステリック"] },
-      { id: "b3p14", pageNumber: 14, heading: "嫌気的条件下の代謝", content: "嫌気条件ではピルビン酸は乳酸脱水素酵素（LDH）によって乳酸へ還元される。この反応によりNADHが再酸化されNAD+が再生され、解糖系の継続が可能となる。", tags: ["嫌気", "乳酸", "LDH", "NAD+"] },
+      { id: "b3p12", pageNumber: 12, heading: "解糖系の概要", content: "解糖系はグルコースをピルビン酸へ変換し、ATPとNADHを産生する。1分子のグルコースから正味2ATP、2NADHが生成される。細胞質で進行する。", tags: ["解糖系","グルコース","ATP","NADH","ピルビン酸"] },
+      { id: "b3p13", pageNumber: 13, heading: "律速酵素", content: "ホスホフルクトキナーゼ-1（PFK-1）は解糖系の律速酵素である。ATPにより阻害され、AMPにより活性化される。フルクトース-2,6-ビスリン酸はPFK-1の最も強力なアロステリック活性化因子であり、インスリンにより産生が促進される。", tags: ["PFK-1","律速酵素","アロステリック"] },
+      { id: "b3p14", pageNumber: 14, heading: "嫌気的条件下の代謝", content: "嫌気条件ではピルビン酸は乳酸脱水素酵素（LDH）によって乳酸へ還元される。この反応によりNADHが再酸化されNAD+が再生され、解糖系の継続が可能となる。", tags: ["嫌気","乳酸","LDH","NAD+"] },
     ]
   },
   {
     id: "phys5", title: "生理学 第5回 呼吸生理", courseName: "生理学",
     lectureNumber: 5, year: 2024, color: "#185FA5",
     pages: [
-      { id: "p5p22", pageNumber: 22, heading: "肺胞換気量", content: "肺胞換気量（VA）は1回換気量（VT）から死腔量（VD）を差し引いて求める。VA＝（VT－VD）×呼吸数。正常値は約4L/分。", tags: ["肺胞換気量", "1回換気量", "死腔"] },
-      { id: "p5p23", pageNumber: 23, heading: "PaCO2と換気の関係", content: "PaCO2は肺胞換気量と反比例する。換気が低下するとPaCO2は上昇し（高CO2血症・呼吸性アシドーシス）、換気が亢進すると低下する（低CO2血症・呼吸性アルカローシス）。基準値は35-45mmHg。", tags: ["PaCO2", "換気", "高CO2血症"] },
+      { id: "p5p22", pageNumber: 22, heading: "肺胞換気量", content: "肺胞換気量（VA）は1回換気量（VT）から死腔量（VD）を差し引いて求める。VA＝（VT－VD）×呼吸数。正常値は約4L/分。", tags: ["肺胞換気量","1回換気量","死腔"] },
+      { id: "p5p23", pageNumber: 23, heading: "PaCO2と換気の関係", content: "PaCO2は肺胞換気量と反比例する。換気が低下するとPaCO2は上昇し（高CO2血症・呼吸性アシドーシス）、換気が亢進すると低下する（低CO2血症・呼吸性アルカローシス）。基準値は35-45mmHg。", tags: ["PaCO2","換気","高CO2血症"] },
     ]
   },
 ];
@@ -35,7 +35,8 @@ const MED_HEAVY = [
   "診断","鑑別","治療","禁忌","適応","検査","所見","症状","病態","機序","定義","分類","予後","手術","投薬",
 ];
 
-async function renderPdfPageToBase64(pdf, pageNum, scale=1.5) {
+// ── PDF Extraction ────────────────────────────────────────────────────────────
+async function renderPdfPageToBase64(pdf, pageNum, scale = 1.5) {
   const page = await pdf.getPage(pageNum);
   const viewport = page.getViewport({ scale });
   const canvas = document.createElement("canvas");
@@ -43,38 +44,24 @@ async function renderPdfPageToBase64(pdf, pageNum, scale=1.5) {
   canvas.height = Math.floor(viewport.height);
   const ctx = canvas.getContext("2d");
   await page.render({ canvasContext: ctx, viewport }).promise;
-  // JPEG変換（base64、品質0.85）
-  const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-  return dataUrl.split(",")[1]; // base64部分のみ
+  return canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
 }
 
 async function extractPdfPagesByVision(file, onProgress) {
-  // Step1: FileReaderでArrayBuffer取得（iOS Safari対応）
   const arrayBuffer = await new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
+    reader.onload = e => resolve(e.target.result);
     reader.onerror = () => reject(new Error("ファイル読み込みに失敗しました"));
     reader.readAsArrayBuffer(file);
   });
-
   const typedArray = new Uint8Array(arrayBuffer);
-  const pdf = await pdfjsLib.getDocument({
-    data: typedArray,
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-  }).promise;
-
+  const pdf = await pdfjsLib.getDocument({ data: typedArray, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
   const totalPages = pdf.numPages;
   const pages = [];
-
   for (let i = 1; i <= totalPages; i++) {
     if (onProgress) onProgress(i, totalPages);
     try {
-      // Step2: ページをcanvasに描画してbase64化
       const imageBase64 = await renderPdfPageToBase64(pdf, i, 1.5);
-
-      // Step3: Claude vision APIでテキスト抽出
       const res = await fetch("/api/extract-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,79 +69,51 @@ async function extractPdfPagesByVision(file, onProgress) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "API error");
-
       const text = (data.text || "").trim();
       if (text.length > 10) {
-        pages.push({
-          id: "pdf_" + Date.now() + "_p" + i,
-          pageNumber: i,
-          heading: "",
-          content: text,
-          tags: MED_HEAVY.filter(k => text.includes(k)).slice(0, 10),
-        });
-      }
-    } catch (pageErr) {
-      console.warn("ページ " + i + " スキップ:", pageErr);
-    }
-  }
-  return pages;
-}
-
-// テキスト直接抽出（テキストPDF用フォールバック）
-async function extractPdfPagesText(file) {
-  const arrayBuffer = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => resolve(e.target.result);
-    reader.onerror = () => reject(new Error("ファイル読み込みに失敗しました"));
-    reader.readAsArrayBuffer(file);
-  });
-  const typedArray = new Uint8Array(arrayBuffer);
-  const pdf = await pdfjsLib.getDocument({
-    data: typedArray,
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-  }).promise;
-  const pages = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    try {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent({ includeMarkedContent: false });
-      let textParts = [];
-      for (let j = 0; j < textContent.items.length; j++) {
-        const item = textContent.items[j];
-        if (item && typeof item.str === "string") textParts.push(item.str);
-      }
-      const text = textParts.join(" ").replace(/\s+/g, " ").trim();
-      if (text.length > 10) {
-        pages.push({
-          id: "pdf_" + Date.now() + "_p" + i,
-          pageNumber: i,
-          heading: "",
-          content: text,
-          tags: MED_HEAVY.filter(k => text.includes(k)).slice(0, 10),
-        });
+        pages.push({ id: "pdf_" + Date.now() + "_p" + i, pageNumber: i, heading: "", content: text, tags: MED_HEAVY.filter(k => text.includes(k)).slice(0, 10) });
       }
     } catch (e) { console.warn("skip page", i, e); }
   }
   return pages;
 }
 
-// ── Search Engine（ルールベース） ─────────────────────────────────────────────
-function createEngine() {
-  function tokenize(text) {
-    return text.replace(/[はをがにでもとやのへからまでより、。？?！!「」【】（）\s]/g, " ").split(" ").filter(w => w.length >= 2);
+async function extractPdfPagesText(file) {
+  const arrayBuffer = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = () => reject(new Error("読み込み失敗"));
+    reader.readAsArrayBuffer(file);
+  });
+  const typedArray = new Uint8Array(arrayBuffer);
+  const pdf = await pdfjsLib.getDocument({ data: typedArray, useWorkerFetch: false, isEvalSupported: false, useSystemFonts: true }).promise;
+  const pages = [];
+  for (let i = 1; i <= pdf.numPages; i++) {
+    try {
+      const page = await pdf.getPage(i);
+      const tc = await page.getTextContent({ includeMarkedContent: false });
+      let parts = [];
+      for (let j = 0; j < tc.items.length; j++) { if (tc.items[j] && typeof tc.items[j].str === "string") parts.push(tc.items[j].str); }
+      const text = parts.join(" ").replace(/\s+/g, " ").trim();
+      if (text.length > 10) pages.push({ id: "pdf_" + Date.now() + "_p" + i, pageNumber: i, heading: "", content: text, tags: MED_HEAVY.filter(k => text.includes(k)).slice(0, 10) });
+    } catch (e) { console.warn("skip", i, e); }
   }
+  return pages;
+}
+
+// ── Search Engine ─────────────────────────────────────────────────────────────
+function createEngine() {
+  function tokenize(t) { return t.replace(/[はをがにでもとやのへからまでより、。？?！!「」【】（）\s]/g, " ").split(" ").filter(w => w.length >= 2); }
   function scorePage(page, question) {
     const qTokens = tokenize(question);
     const content = page.content, heading = page.heading || "";
     let score = 0; const reasons = [];
-    for (const tag of page.tags) { if (question.includes(tag)) { score += 25; reasons.push(`タグ「${tag}」`); } }
-    for (const kw of MED_HEAVY) { if (kw.length >= 2 && question.includes(kw) && content.includes(kw)) { score += 18; reasons.push(`医学語「${kw}」`); } }
+    for (const tag of page.tags) { if (question.includes(tag)) { score += 25; reasons.push("タグ「" + tag + "」"); } }
+    for (const kw of MED_HEAVY) { if (kw.length >= 2 && question.includes(kw) && content.includes(kw)) { score += 18; reasons.push("医学語「" + kw + "」"); } }
     for (const tok of qTokens) {
       if (tok.length < 2) continue;
-      if (heading.includes(tok)) { score += 15; reasons.push(`見出し「${tok}」`); }
-      else if (content.includes(tok)) { score += 8; reasons.push(`本文「${tok}」`); }
+      if (heading.includes(tok)) { score += 15; reasons.push("見出し「" + tok + "」"); }
+      else if (content.includes(tok)) { score += 8; reasons.push("本文「" + tok + "」"); }
     }
     return { score: Math.min(score, 100), reasons: [...new Set(reasons)].slice(0, 4) };
   }
@@ -170,50 +129,73 @@ function createEngine() {
   }
   return { search };
 }
-
 const engine = createEngine();
 
-// ── Claude API呼び出し ────────────────────────────────────────────────────────
+// ── Claude API ────────────────────────────────────────────────────────────────
 async function callClaudeAPI(question, searchResults, mode) {
   const pages = searchResults.slice(0, 8).map(({ doc, page }) => ({
-    docTitle: doc.title,
-    pageNumber: page.pageNumber,
-    content: page.content,
+    docTitle: doc.title, pageNumber: page.pageNumber, content: page.content,
   }));
-
-  const res = await fetch('/api/answer', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const res = await fetch("/api/answer", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ question, pages, mode }),
   });
-
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'API error');
+  if (!res.ok) throw new Error(data.error || "API error");
   return data.answer;
 }
 
-// ── LocalStorage ──────────────────────────────────────────────────────────────
-const LS = { docs: "emab_docs_v6", active: "emab_active_v6", q: "emab_q_v6", aiMode: "emab_aimode_v6" };
+// ── PDF Export ────────────────────────────────────────────────────────────────
+function exportToPdf(items) {
+  const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+  <style>
+    body { font-family: 'Hiragino Sans', sans-serif; font-size: 13px; line-height: 1.8; color: #111; max-width: 800px; margin: 40px auto; padding: 0 40px; }
+    h1 { font-size: 18px; font-weight: 700; color: #0F6E56; border-bottom: 2px solid #0F6E56; padding-bottom: 8px; margin-bottom: 24px; }
+    .item { margin-bottom: 40px; page-break-inside: avoid; }
+    .question { font-size: 14px; font-weight: 700; color: #111; margin-bottom: 12px; padding: 10px 14px; background: #f0f9f5; border-left: 3px solid #0F6E56; border-radius: 4px; }
+    .answer { font-size: 13px; line-height: 1.9; color: #1a1a1a; margin-bottom: 12px; white-space: pre-wrap; }
+    .refs { font-size: 11px; color: #555; background: #f7f7f5; padding: 10px 14px; border-radius: 6px; border: 0.5px solid #e5e7eb; }
+    .refs-title { font-weight: 700; margin-bottom: 6px; color: #888; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+    .ref-item { padding: 2px 0; }
+    .divider { border: none; border-top: 0.5px solid #e5e7eb; margin: 32px 0; }
+    .meta { font-size: 10px; color: #bbb; margin-bottom: 4px; }
+  </style></head><body>
+  <h1>Med Answer Builder — 答案集</h1>
+  ${items.map((item, i) => `
+    <div class="item">
+      <div class="meta">${new Date(item.createdAt).toLocaleDateString("ja-JP")} · ${item.docNames || ""}</div>
+      <div class="question">Q${i + 1}. ${item.question}</div>
+      <div class="answer">${item.answer}</div>
+      ${item.refs && item.refs.length ? `<div class="refs"><div class="refs-title">参考ページ</div>${item.refs.map(r => `<div class="ref-item">・${r}</div>`).join("")}</div>` : ""}
+    </div>
+    ${i < items.length - 1 ? '<hr class="divider">' : ""}
+  `).join("")}
+  </body></html>`;
+  const win = window.open("", "_blank");
+  win.document.write(html);
+  win.document.close();
+  setTimeout(() => { win.print(); }, 500);
+}
+
+// ── localStorage helpers ──────────────────────────────────────────────────────
+const LS = {
+  docs: "emab_docs_v7", active: "emab_active_v7", q: "emab_q_v7",
+  aiMode: "emab_aimode_v7", history: "emab_history_v7"
+};
 function ls(key, fallback) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } }
 function lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} }
 function uid() { return "id_" + Math.random().toString(36).slice(2); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-const GREEN = "#0F6E56";
-const PURPLE = "#534AB7";
-const CT = { direct: "直接根拠", indirect: "間接根拠", conflict: "矛盾", unsupported: "根拠なし" };
-const CTbg = { direct: "#E1F5EE", indirect: "#E6F1FB", conflict: "#FAEEDA", unsupported: "#FCEBEB" };
-const CTc  = { direct: "#085041", indirect: "#0C447C", conflict: "#633806", unsupported: "#791F1F" };
+const GREEN = "#0F6E56", PURPLE = "#534AB7";
 
-function Badge({ type, small }) {
-  const s = small ? { fontSize: 9, padding: "1px 5px" } : { fontSize: 10, padding: "2px 7px" };
-  return <span style={{ ...s, background: CTbg[type], color: CTc[type], borderRadius: 10, fontWeight: 600, display: "inline-block", flexShrink: 0 }}>{CT[type]}</span>;
-}
+// ── Sub Components ────────────────────────────────────────────────────────────
 function ScoreBar({ score }) {
-  const c = score >= 60 ? "#0F6E56" : score >= 30 ? "#BA7517" : "#A32D2D";
+  const c = score >= 60 ? GREEN : score >= 30 ? "#BA7517" : "#A32D2D";
   return (
     <div style={{ width: 38, flexShrink: 0 }}>
-      <div style={{ height: 3, background: "#e5e7eb", borderRadius: 2 }}><div style={{ height: 3, width: `${score}%`, background: c, borderRadius: 2 }} /></div>
+      <div style={{ height: 3, background: "#e5e7eb", borderRadius: 2 }}><div style={{ height: 3, width: score + "%", background: c, borderRadius: 2 }} /></div>
       <div style={{ fontSize: 9, color: "#aaa", textAlign: "center", marginTop: 1 }}>{score}</div>
     </div>
   );
@@ -223,7 +205,7 @@ function PdfUploadButton({ onDone }) {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [error, setError] = useState("");
-  const [mode, setMode] = useState("vision"); // "vision" | "text"
+  const [mode, setMode] = useState("vision");
 
   async function handleFile(e) {
     const file = e.target.files[0];
@@ -231,69 +213,42 @@ function PdfUploadButton({ onDone }) {
     if (file.type !== "application/pdf") { setError("PDFを選択してください"); return; }
     setLoading(true); setError(""); setProgress({ current: 0, total: 0 });
     try {
-      let pages = [];
-      if (mode === "vision") {
-        // Claude visionでOCR抽出
-        pages = await extractPdfPagesByVision(file, (cur, total) => {
-          setProgress({ current: cur, total });
-        });
-      } else {
-        // テキスト直接抽出（テキストPDF用）
-        pages = await extractPdfPagesText(file);
-      }
-      if (!pages.length) {
-        setError("テキストを抽出できませんでした。別のモードを試してください。");
-        setLoading(false); return;
-      }
-      onDone({
-        id: "id_" + Math.random().toString(36).slice(2),
-        title: file.name.replace(/\.pdf$/i, ""),
-        courseName: file.name.replace(/\.pdf$/i, ""),
-        lectureNumber: 1,
-        year: new Date().getFullYear(),
-        color: "#534AB7",
-        pages,
-      });
+      const pages = mode === "vision"
+        ? await extractPdfPagesByVision(file, (cur, total) => setProgress({ current: cur, total }))
+        : await extractPdfPagesText(file);
+      if (!pages.length) { setError("テキストを抽出できませんでした。別のモードを試してください。"); setLoading(false); return; }
+      onDone({ id: uid(), title: file.name.replace(/\.pdf$/i, ""), courseName: file.name.replace(/\.pdf$/i, ""), lectureNumber: 1, year: new Date().getFullYear(), color: PURPLE, pages });
     } catch (err) { setError("読み込み失敗: " + err.message); }
-    setLoading(false);
-    e.target.value = "";
+    setLoading(false); e.target.value = "";
   }
 
   return (
     <div style={{ marginBottom: 4 }}>
       <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
-        {[["vision", "✨ AI読取（画像PDF対応）"], ["text", "📝 テキスト抽出"]].map(([k, v]) => (
+        {[["vision", "✨ AI読取"], ["text", "📝 テキスト"]].map(([k, v]) => (
           <button key={k} onClick={() => setMode(k)} disabled={loading}
-            style={{ flex: 1, padding: "5px 4px", border: "0.5px solid " + (mode === k ? "#a78bfa" : "#e5e7eb"), borderRadius: 7, fontSize: 10, fontWeight: 600, cursor: "pointer", background: mode === k ? "#f5f3ff" : "#fff", color: mode === k ? "#534AB7" : "#aaa", fontFamily: "inherit" }}>
+            style={{ flex: 1, padding: "5px 4px", border: "0.5px solid " + (mode === k ? "#a78bfa" : "#e5e7eb"), borderRadius: 7, fontSize: 10, fontWeight: 600, cursor: "pointer", background: mode === k ? "#f5f3ff" : "#fff", color: mode === k ? PURPLE : "#aaa", fontFamily: "inherit" }}>
             {v}
           </button>
         ))}
       </div>
-      <label style={{ display: "block", width: "100%", padding: "10px 0", border: "0.5px dashed " + (loading ? "#ccc" : "#a78bfa"), borderRadius: 8, fontSize: 12, color: loading ? "#aaa" : "#534AB7", background: loading ? "#fafafa" : "#f5f3ff", cursor: loading ? "not-allowed" : "pointer", textAlign: "center", fontWeight: 600, boxSizing: "border-box" }}>
-        {loading
-          ? progress.total > 0
-            ? "📄 読み取り中… " + progress.current + "/" + progress.total + "ページ"
-            : "📄 読み込み中…"
-          : "📄 PDFをアップロード"}
+      <label style={{ display: "block", width: "100%", padding: "10px 0", border: "0.5px dashed " + (loading ? "#ccc" : "#a78bfa"), borderRadius: 8, fontSize: 12, color: loading ? "#aaa" : PURPLE, background: loading ? "#fafafa" : "#f5f3ff", cursor: loading ? "not-allowed" : "pointer", textAlign: "center", fontWeight: 600, boxSizing: "border-box" }}>
+        {loading ? (progress.total > 0 ? "読み取り中… " + progress.current + "/" + progress.total + "p" : "読み込み中…") : "📄 PDFをアップロード"}
         <input type="file" accept="application/pdf" onChange={handleFile} disabled={loading} style={{ display: "none" }} />
       </label>
       {loading && progress.total > 0 && (
         <div style={{ height: 4, background: "#e5e7eb", borderRadius: 2, marginTop: 6 }}>
-          <div style={{ height: 4, width: (progress.current / progress.total * 100) + "%", background: "#534AB7", borderRadius: 2, transition: "width 0.3s" }} />
+          <div style={{ height: 4, width: (progress.current / progress.total * 100) + "%", background: PURPLE, borderRadius: 2, transition: "width 0.3s" }} />
         </div>
-      )}
-      {mode === "vision" && !loading && (
-        <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 4 }}>Claude APIでOCR抽出（APIキー必要）</div>
       )}
       {error && <div style={{ fontSize: 11, color: "#e24b4a", marginTop: 4 }}>{error}</div>}
     </div>
   );
 }
 
-
 function DocModal({ doc, onClose, onSave }) {
   const [form, setForm] = useState(doc || { id: uid(), title: "", courseName: "", lectureNumber: 1, year: 2024, color: GREEN, pages: [] });
-  const [raw, setRaw] = useState(doc ? doc.pages.map(p => `p${p.pageNumber}: ${p.content}`).join("\n") : "");
+  const [raw, setRaw] = useState(doc ? doc.pages.map(p => "p" + p.pageNumber + ": " + p.content).join("\n") : "");
   function parsePgs(text) {
     return text.split("\n").filter(l => l.trim()).map((line, i) => {
       const m = line.match(/^p(\d+)[:\s：]+(.+)/);
@@ -306,7 +261,7 @@ function DocModal({ doc, onClose, onSave }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 16 }}>
       <div style={{ background: "#fff", borderRadius: 12, padding: 20, width: "100%", maxWidth: 480, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 14 }}>{doc ? "資料を編集" : "テキストで資料を追加"}</div>
-        {[["title", "資料タイトル", "例：生化学 第3回 糖代謝"], ["courseName", "科目名", "例：生化学"]].map(([k, lbl, ph]) => (
+        {[["title", "資料タイトル", "例：生化学 第3回"], ["courseName", "科目名", "例：生化学"]].map(([k, lbl, ph]) => (
           <div key={k} style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 3 }}>{lbl}</div>
             <input value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))} placeholder={ph}
@@ -329,15 +284,72 @@ function DocModal({ doc, onClose, onSave }) {
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 11, fontWeight: 500, color: "#666", marginBottom: 3 }}>資料テキスト（p番号:内容 形式）</div>
           <textarea value={raw} onChange={e => setRaw(e.target.value)} rows={8}
-            placeholder={"p12: 解糖系はグルコースをピルビン酸へ変換し…\np13: 律速酵素はPFK-1…"}
+            placeholder={"p12: 解糖系はグルコースをピルビン酸へ…\np13: 律速酵素はPFK-1…"}
             style={{ width: "100%", padding: "8px 10px", border: "0.5px solid #ddd", borderRadius: 7, fontSize: 12, fontFamily: "monospace", outline: "none", resize: "vertical", color: "#111", lineHeight: 1.6, boxSizing: "border-box" }} />
           <div style={{ fontSize: 11, color: "#aaa", marginTop: 3 }}>{raw.split("\n").filter(l => l.match(/^p\d+/)).length}ページ認識済み</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button onClick={onClose} style={{ flex: 1, padding: 10, border: "0.5px solid #ddd", borderRadius: 8, fontSize: 13, background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "#666" }}>キャンセル</button>
-          <button onClick={() => { if (!form.title.trim()) { alert("タイトルを入力してください"); return; } onSave({ ...form, pages: parsePgs(raw) }); }} style={{ flex: 2, padding: 10, background: GREEN, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>保存する</button>
+          <button onClick={() => { if (!form.title.trim()) { alert("タイトルを入力してください"); return; } onSave({ ...form, pages: parsePgs(raw) }); }}
+            style={{ flex: 2, padding: 10, background: GREEN, color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>保存する</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── History Item Component ────────────────────────────────────────────────────
+function HistoryItem({ item, onDelete, onReuse }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div style={{ background: "#fff", border: "0.5px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 11, color: "#aaa", marginBottom: 3 }}>{new Date(item.createdAt).toLocaleDateString("ja-JP")} · {item.docNames}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#111", marginBottom: 4, lineHeight: 1.4 }}>
+            {item.questions.length === 1 ? item.questions[0] : item.questions.length + "問"}
+          </div>
+          {item.questions.length > 1 && (
+            <div style={{ fontSize: 11, color: "#888" }}>{item.questions.slice(0, 2).map((q, i) => <div key={i}>Q{i + 1}. {q.slice(0, 40)}{q.length > 40 ? "…" : ""}</div>)}</div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+          <button onClick={() => setExpanded(v => !v)}
+            style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid #e5e7eb", borderRadius: 6, background: "transparent", cursor: "pointer", color: "#666", fontFamily: "inherit" }}>
+            {expanded ? "閉じる" : "詳細"}
+          </button>
+          <button onClick={() => onReuse(item)}
+            style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid " + GREEN, borderRadius: 6, background: "transparent", cursor: "pointer", color: GREEN, fontFamily: "inherit", fontWeight: 600 }}>
+            再利用
+          </button>
+          <button onClick={() => onDelete(item.id)}
+            style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid #fecaca", borderRadius: 6, background: "transparent", cursor: "pointer", color: "#e24b4a", fontFamily: "inherit" }}>
+            削除
+          </button>
+        </div>
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 12, borderTop: "0.5px solid #f3f4f6", paddingTop: 12 }}>
+          {item.results.map((r, i) => (
+            <div key={i} style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 6 }}>Q{i + 1}. {r.question}</div>
+              <div style={{ fontSize: 12, color: "#1a1a1a", lineHeight: 1.9, background: "#f9fffe", borderRadius: 8, padding: "10px 12px", borderLeft: "2px solid " + GREEN, whiteSpace: "pre-wrap" }}>
+                {r.answer}
+              </div>
+              {r.refs && r.refs.length > 0 && (
+                <div style={{ marginTop: 6, fontSize: 11, color: "#888", background: "#f7f7f5", borderRadius: 6, padding: "8px 10px" }}>
+                  <div style={{ fontWeight: 600, marginBottom: 3 }}>参考ページ</div>
+                  {r.refs.map((ref, j) => <div key={j}>・{ref}</div>)}
+                </div>
+              )}
+            </div>
+          ))}
+          <button onClick={() => exportToPdf(item.results.map(r => ({ ...r, createdAt: item.createdAt, docNames: item.docNames })))}
+            style={{ fontSize: 11, padding: "6px 12px", border: "0.5px solid #e5e7eb", borderRadius: 7, background: "transparent", cursor: "pointer", color: "#555", fontFamily: "inherit", marginTop: 4 }}>
+            📄 PDFで出力
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -346,21 +358,21 @@ const NAV_ITEMS = [
   { id: "docs", icon: "📚", label: "資料" },
   { id: "input", icon: "✏️", label: "問題" },
   { id: "result", icon: "📄", label: "答案" },
-  { id: "refs", icon: "🔍", label: "根拠" },
+  { id: "history", icon: "🕐", label: "履歴" },
 ];
 
+// ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
   const [docs, setDocs]           = useState(() => ls(LS.docs, SAMPLE_DOCS));
   const [activeIds, setActiveIds] = useState(() => new Set(ls(LS.active, SAMPLE_DOCS.map(d => d.id))));
-  const [question, setQuestion]   = useState(() => ls(LS.q, ""));
+  const [questionsText, setQuestionsText] = useState(() => ls(LS.q, ""));
   const [mode, setMode]           = useState("standard");
   const [aiMode, setAiMode]       = useState(() => ls(LS.aiMode, true));
   const [running, setRunning]     = useState(false);
-  const [step, setStep]           = useState(0);
   const [stepLabel, setStepLabel] = useState("");
-  const [searchResults, setSR]    = useState([]);
-  const [aiAnswer, setAiAnswer]   = useState("");
-  const [aiError, setAiError]     = useState("");
+  const [results, setResults]     = useState([]); // [{question, answer, refs, searchResults}]
+  const [errors, setErrors]       = useState([]);
+  const [history, setHistory]     = useState(() => ls(LS.history, []));
   const [modal, setModal]         = useState(null);
   const [mobileTab, setMobileTab] = useState("input");
   const [isMobile, setIsMobile]   = useState(false);
@@ -368,51 +380,112 @@ export default function App() {
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
-    check(); window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
+    check(); window.addEventListener("resize", check); return () => window.removeEventListener("resize", check);
   }, []);
-
   useEffect(() => { lsSet(LS.docs, docs); }, [docs]);
   useEffect(() => { lsSet(LS.active, [...activeIds]); }, [activeIds]);
-  useEffect(() => { lsSet(LS.q, question); }, [question]);
+  useEffect(() => { lsSet(LS.q, questionsText); }, [questionsText]);
   useEffect(() => { lsSet(LS.aiMode, aiMode); }, [aiMode]);
+  useEffect(() => { lsSet(LS.history, history); }, [history]);
 
   const toggleActive = useCallback(id => {
     setActiveIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   }, []);
 
+  // 問いをパース（空行区切り or 番号付き）
+  function parseQuestions(text) {
+    const lines = text.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    const questions = [];
+    let current = "";
+    for (const line of lines) {
+      // 番号付き問い（1. や Q1. など）は新しい問いとして扱う
+      if (/^[QqＱ]?\d+[.．、\s]/.test(line) && current.trim()) {
+        questions.push(current.trim());
+        current = line.replace(/^[QqＱ]?\d+[.．、\s]+/, "");
+      } else {
+        current += (current ? " " : "") + line;
+      }
+    }
+    if (current.trim()) questions.push(current.trim());
+    return questions.length > 0 ? questions : [text.trim()];
+  }
+
   async function runPipeline() {
-    if (!question.trim()) { alert("問題文を入力してください"); return; }
+    const questions = parseQuestions(questionsText);
+    if (!questions[0]) { alert("問題文を入力してください"); return; }
     if (activeIds.size === 0) { alert("資料を1つ以上選択してください"); return; }
-    setRunning(true); setAiAnswer(""); setAiError(""); setSR([]);
+    setRunning(true); setResults([]); setErrors([]);
     if (isMobile) setMobileTab("result");
 
-    setStep(1); setStepLabel("関連ページを検索中…");
-    await sleep(200);
-    const sr = engine.search(docs, question, activeIds);
-    setSR(sr);
+    const newResults = [];
+    const newErrors = [];
 
-    if (sr.length === 0) {
-      setAiError("関連するページが見つかりませんでした。問題文のキーワードを確認するか、別の資料を選択してください。");
-      setStep(0); setRunning(false); return;
+    for (let qi = 0; qi < questions.length; qi++) {
+      const question = questions[qi];
+      setStepLabel("Q" + (qi + 1) + "/" + questions.length + " 検索中…");
+      await sleep(100);
+
+      const sr = engine.search(docs, question, activeIds);
+      if (sr.length === 0) {
+        newErrors.push({ question, message: "関連するページが見つかりませんでした" });
+        continue;
+      }
+
+      if (aiMode) {
+        setStepLabel("Q" + (qi + 1) + "/" + questions.length + " Claude APIで生成中…");
+        try {
+          const rawAnswer = await callClaudeAPI(question, sr, mode);
+          // 参考ページを本文から分離
+          const { cleanAnswer, refs } = parseAnswerAndRefs(rawAnswer, sr);
+          newResults.push({ question, answer: cleanAnswer, refs, searchResults: sr });
+        } catch (err) {
+          newErrors.push({ question, message: "API エラー: " + err.message });
+        }
+      } else {
+        // ルールベース
+        const topPages = sr.slice(0, 4);
+        const answer = topPages.map(({ doc, page }) => page.content).join("\n\n");
+        const refs = topPages.map(({ doc, page }) => doc.title.split(" ")[0] + " p." + page.pageNumber + " — " + page.content.slice(0, 50) + "…");
+        newResults.push({ question, answer, refs, searchResults: sr });
+      }
     }
 
-    if (aiMode) {
-      setStep(2); setStepLabel("Claude APIで答案を生成中…");
-      try {
-        const answer = await callClaudeAPI(question, sr, mode);
-        setAiAnswer(answer);
-        setStep(3);
-      } catch (err) {
-        setAiError("API エラー: " + err.message + "\n\nVercelの環境変数 ANTHROPIC_API_KEY が設定されているか確認してください。");
-        setStep(0);
-      }
-    } else {
-      setStep(3);
+    setResults(newResults);
+    setErrors(newErrors);
+
+    // 履歴に保存
+    if (newResults.length > 0) {
+      const historyItem = {
+        id: uid(),
+        createdAt: Date.now(),
+        questions: newResults.map(r => r.question),
+        results: newResults.map(r => ({ question: r.question, answer: r.answer, refs: r.refs })),
+        docNames: docs.filter(d => activeIds.has(d.id)).map(d => d.courseName).join("、"),
+        mode,
+      };
+      setHistory(prev => [historyItem, ...prev].slice(0, 100)); // 最大100件
     }
 
     setStepLabel("完了");
     setRunning(false);
+  }
+
+  // 回答から参考ページを分離する
+  function parseAnswerAndRefs(rawAnswer, sr) {
+    // 「根拠ページ：」以降を分離
+    const refSplit = rawAnswer.split(/\n+(?:根拠ページ[：:：]|参考ページ[：:：]|【参考[^】]*】)/);
+    let cleanAnswer = refSplit[0].trim();
+    let refsFromAnswer = refSplit[1] ? refSplit[1].trim().split("\n").filter(l => l.trim()) : [];
+
+    // 本文中の [p.XX] を除去
+    cleanAnswer = cleanAnswer.replace(/\s*\[[\w\s\.p]*p\.\d+\]/g, "").replace(/\s*（[\w\s]*p\.\d+）/g, "").trim();
+
+    // 検索結果から参考ページを生成
+    const srRefs = sr.slice(0, 6).map(({ doc, page }) =>
+      doc.title.split(" ")[0] + " p." + page.pageNumber + " — " + page.content.slice(0, 60) + "…"
+    );
+    const refs = refsFromAnswer.length > 0 ? refsFromAnswer : srRefs;
+    return { cleanAnswer, refs };
   }
 
   function deleteDoc(id) {
@@ -433,11 +506,17 @@ export default function App() {
     const f = e.target.files[0]; if (!f) return;
     const r = new FileReader(); r.onload = ev => { try { const d = JSON.parse(ev.target.result); setDocs(d); setActiveIds(new Set(d.map(x => x.id))); } catch { alert("読み込みエラー"); } }; r.readAsText(f); e.target.value = "";
   }
+  function deleteHistory(id) { setHistory(prev => prev.filter(h => h.id !== id)); }
+  function reuseHistory(item) { setQuestionsText(item.questions.join("\n")); if (isMobile) setMobileTab("input"); }
+  function exportCurrentToPdf() {
+    const items = results.map(r => ({ ...r, createdAt: Date.now(), docNames: docs.filter(d => activeIds.has(d.id)).map(d => d.courseName).join("、") }));
+    exportToPdf(items);
+  }
 
   const allOn = docs.every(d => activeIds.has(d.id));
   const accentColor = aiMode ? PURPLE : GREEN;
 
-  // ── DocPanel ─────────────────────────────────────────────────────────────────
+  // ── DocPanel ──────────────────────────────────────────────────────────────────
   const DocPanel = (
     <div style={{ padding: isMobile ? "12px" : "14px", overflowY: "auto", flex: 1 }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
@@ -451,7 +530,7 @@ export default function App() {
       </button>
       {docs.map(doc => (
         <div key={doc.id} onClick={() => toggleActive(doc.id)}
-          style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 8px", borderRadius: 9, cursor: "pointer", background: activeIds.has(doc.id) ? "#fff" : "transparent", border: `0.5px solid ${activeIds.has(doc.id) ? "#e5e7eb" : "transparent"}`, marginBottom: 4 }}>
+          style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "9px 8px", borderRadius: 9, cursor: "pointer", background: activeIds.has(doc.id) ? "#fff" : "transparent", border: "0.5px solid " + (activeIds.has(doc.id) ? "#e5e7eb" : "transparent"), marginBottom: 4 }}>
           <div style={{ width: 30, height: 30, borderRadius: 7, background: doc.color + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 700, color: doc.color, flexShrink: 0 }}>{doc.courseName[0]}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{doc.title}</div>
@@ -477,49 +556,48 @@ export default function App() {
   // ── InputPanel ────────────────────────────────────────────────────────────────
   const InputPanel = (
     <div style={{ padding: isMobile ? "12px" : "14px", display: "flex", flexDirection: "column", gap: 12, overflowY: "auto", flex: 1 }}>
-
       {/* AI Mode Toggle */}
-      <div style={{ background: aiMode ? "#f5f3ff" : "#f0faf6", borderRadius: 10, padding: "12px 14px", border: `0.5px solid ${aiMode ? "#c4b5fd" : "#6ee7b7"}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+      <div style={{ background: aiMode ? "#f5f3ff" : "#f0faf6", borderRadius: 10, padding: "10px 12px", border: "0.5px solid " + (aiMode ? "#c4b5fd" : "#6ee7b7") }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: aiMode ? PURPLE : GREEN }}>
-              {aiMode ? "✨ AIモード（Claude API）" : "📋 ルールベースモード"}
-            </div>
-            <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
-              {aiMode ? "資料を根拠にClaude APIがまとまった答案を生成" : "キーワードマッチで関連ページを抽出して表示"}
-            </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: aiMode ? PURPLE : GREEN }}>{aiMode ? "✨ AIモード（Claude API）" : "📋 ルールベースモード"}</div>
+            <div style={{ fontSize: 10, color: "#888", marginTop: 1 }}>{aiMode ? "資料を根拠にClaudeが答案を生成" : "キーワードマッチで関連ページを表示"}</div>
           </div>
           <button onClick={() => setAiMode(v => !v)}
-            style={{ width: 44, height: 24, borderRadius: 12, background: aiMode ? PURPLE : "#ccc", border: "none", cursor: "pointer", position: "relative", flexShrink: 0, transition: "background 0.2s" }}>
+            style={{ width: 44, height: 24, borderRadius: 12, background: aiMode ? PURPLE : "#ccc", border: "none", cursor: "pointer", position: "relative", flexShrink: 0 }}>
             <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: aiMode ? 23 : 3, transition: "left 0.2s" }} />
           </button>
         </div>
-        {aiMode && (
-          <div style={{ fontSize: 10, color: "#7c3aed", background: "#ede9fe", borderRadius: 6, padding: "4px 8px" }}>
-            Vercel環境変数 <code style={{ fontFamily: "monospace" }}>ANTHROPIC_API_KEY</code> が必要です
-          </div>
-        )}
       </div>
 
+      {/* 複数問い入力 */}
       <div>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>問題入力</div>
-        <textarea value={question} onChange={e => setQuestion(e.target.value)} rows={isMobile ? 5 : 6}
-          placeholder={"問題文を入力してください\n\n例：心エコーとは何か説明せよ。"}
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, flex: 1 }}>問題入力</div>
+          <div style={{ fontSize: 10, color: "#aaa" }}>複数可 / 番号付き or 空行区切り</div>
+        </div>
+        <textarea value={questionsText} onChange={e => setQuestionsText(e.target.value)} rows={isMobile ? 7 : 9}
+          placeholder={"1問でも複数問でも入力できます\n\n例（複数）：\n1. 解糖系の律速酵素を述べよ\n2. 嫌気条件下のピルビン酸の代謝を説明せよ\n3. TCAサイクルの入口となる物質は何か"}
           style={{ width: "100%", border: "0.5px solid #e5e7eb", borderRadius: 8, padding: "10px", fontSize: 13, fontFamily: "inherit", resize: "none", outline: "none", lineHeight: 1.6, color: "#111", background: "#fff", boxSizing: "border-box" }} />
+        <div style={{ fontSize: 10, color: "#aaa", marginTop: 3 }}>
+          {parseQuestions(questionsText).filter(q => q.length > 0).length}問 認識済み
+        </div>
       </div>
 
+      {/* 答案形式 */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>答案形式</div>
         <div style={{ display: "flex", gap: 6 }}>
           {[["short", "1行"], ["standard", "標準"], ["detailed", "詳細"]].map(([k, v]) => (
             <button key={k} onClick={() => setMode(k)}
-              style={{ flex: 1, padding: "8px 4px", border: `0.5px solid ${mode === k ? accentColor : "#e5e7eb"}`, borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: "pointer", background: mode === k ? accentColor : "#fff", color: mode === k ? "#fff" : "#888", fontFamily: "inherit" }}>
+              style={{ flex: 1, padding: "8px 4px", border: "0.5px solid " + (mode === k ? accentColor : "#e5e7eb"), borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: "pointer", background: mode === k ? accentColor : "#fff", color: mode === k ? "#fff" : "#888", fontFamily: "inherit" }}>
               {v}
             </button>
           ))}
         </div>
       </div>
 
+      {/* 使用中資料 */}
       <div>
         <div style={{ fontSize: 10, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>使用中の資料</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
@@ -537,7 +615,7 @@ export default function App() {
 
       {running && (
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 3 }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: accentColor, opacity: [1, 0.5, 0.2][i], animation: "pulse 1s infinite", animationDelay: `${i * 0.2}s` }} />)}</div>
+          <div style={{ display: "flex", gap: 3 }}>{[0,1,2].map(i => <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: accentColor, opacity: [1,0.5,0.2][i], animation: "pulse 1s infinite", animationDelay: i * 0.2 + "s" }} />)}</div>
           <span style={{ fontSize: 11, color: accentColor, fontWeight: 500 }}>{stepLabel}</span>
         </div>
       )}
@@ -547,151 +625,110 @@ export default function App() {
   // ── ResultPanel ───────────────────────────────────────────────────────────────
   const ResultPanel = (
     <div ref={centerRef} style={{ overflowY: "auto", padding: isMobile ? "12px" : "16px", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
-      {step === 0 && !aiError && (
+      {results.length === 0 && errors.length === 0 && !running && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", textAlign: "center", gap: 10, padding: 24 }}>
           <div style={{ fontSize: 36 }}>📋</div>
           <div style={{ fontSize: 14, fontWeight: 600, color: "#444" }}>授業資料から答案を作成します</div>
-          <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.8 }}>PDFをアップロードするか資料を選んで<br />問題を入力してください</div>
+          <div style={{ fontSize: 12, color: "#aaa", lineHeight: 1.8 }}>PDFをアップロードして問題を入力してください<br />複数問を一括処理することもできます</div>
         </div>
       )}
 
-      {/* エラー表示 */}
-      {aiError && (
-        <div style={{ background: "#fff5f5", border: "0.5px solid #fecaca", borderRadius: 10, padding: "14px 16px" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#dc2626", marginBottom: 6 }}>⚠ エラー</div>
-          <div style={{ fontSize: 12, color: "#7f1d1d", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{aiError}</div>
+      {/* エラー */}
+      {errors.map((err, i) => (
+        <div key={i} style={{ background: "#fff5f5", border: "0.5px solid #fecaca", borderRadius: 10, padding: "12px 14px" }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#dc2626", marginBottom: 4 }}>⚠ {err.question.slice(0, 40)}{err.question.length > 40 ? "…" : ""}</div>
+          <div style={{ fontSize: 12, color: "#7f1d1d" }}>{err.message}</div>
         </div>
-      )}
+      ))}
 
-      {/* Step1: 検索結果 */}
-      {step >= 1 && searchResults.length > 0 && (
-        <div style={{ background: "#fff", border: "0.5px solid #e5e7eb", borderRadius: 10, padding: "13px 14px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <div style={{ width: 20, height: 20, borderRadius: "50%", background: step >= 2 ? GREEN : "#BA7517", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff", flexShrink: 0 }}>1</div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>関連ページ検索</div>
-            <div style={{ fontSize: 11, color: "#aaa", marginLeft: "auto" }}>{searchResults.length}件ヒット → Claude APIへ送信</div>
+      {/* 答案一覧 */}
+      {results.length > 0 && (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#333" }}>{results.length}問の答案</div>
+            <button onClick={exportCurrentToPdf}
+              style={{ marginLeft: "auto", fontSize: 11, padding: "5px 12px", border: "0.5px solid " + accentColor, borderRadius: 7, background: "transparent", cursor: "pointer", color: accentColor, fontWeight: 600, fontFamily: "inherit" }}>
+              📄 PDFで出力
+            </button>
           </div>
-          {searchResults.slice(0, 5).map(({ doc, page, score, reasons }) => (
-            <div key={page.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 0", borderBottom: "0.5px solid #f3f4f6" }}>
-              <ScoreBar score={score} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 5, marginBottom: 2 }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: doc.color || GREEN }}>{doc.courseName}</span>
-                  <span style={{ fontSize: 11, color: "#aaa" }}>p.{page.pageNumber}</span>
-                </div>
-                <div style={{ fontSize: 12, color: "#555", lineHeight: 1.5 }}>{page.content.slice(0, 100)}{page.content.length > 100 ? "…" : ""}</div>
-                {reasons?.length > 0 && <div style={{ marginTop: 3, display: "flex", flexWrap: "wrap", gap: 3 }}>{reasons.map((r, i) => <span key={i} style={{ fontSize: 9, background: "#f0f9f5", color: GREEN, padding: "1px 5px", borderRadius: 8 }}>{r}</span>)}</div>}
+
+          {results.map((r, i) => (
+            <div key={i} style={{ background: "#fff", border: "0.5px solid " + accentColor + "44", borderRadius: 10, padding: "14px 16px" }}>
+              {/* 問い */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 10, padding: "8px 12px", background: "#f7f7f5", borderRadius: 7, borderLeft: "2px solid #ccc" }}>
+                Q{i + 1}. {r.question}
               </div>
+
+              {/* 答案本文（参考ページなし） */}
+              <div style={{ fontSize: 13, lineHeight: 1.95, color: "#1a1a1a", background: "#f9fffe", borderRadius: 8, padding: "12px 14px", borderLeft: "3px solid " + accentColor, whiteSpace: "pre-wrap", marginBottom: 10 }}>
+                {r.answer}
+              </div>
+
+              {/* 参考ページ 別ボックス */}
+              {r.refs && r.refs.length > 0 && (
+                <div style={{ background: "#f7f7f5", borderRadius: 8, padding: "10px 12px", border: "0.5px solid #e5e7eb" }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 6 }}>参考ページ</div>
+                  {r.refs.map((ref, j) => (
+                    <div key={j} style={{ fontSize: 11, color: "#555", padding: "3px 0", borderBottom: j < r.refs.length - 1 ? "0.5px solid #eee" : "none", lineHeight: 1.5 }}>
+                      <span style={{ color: accentColor, fontWeight: 600, marginRight: 4 }}>{j + 1}.</span>{ref}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
-          {searchResults.length > 5 && <div style={{ fontSize: 11, color: "#aaa", paddingTop: 6 }}>他 {searchResults.length - 5} ページも送信済み</div>}
-        </div>
-      )}
-
-      {/* Step2: AI生成中 */}
-      {step === 2 && (
-        <div style={{ background: "#f5f3ff", border: "0.5px solid #c4b5fd", borderRadius: 10, padding: "16px 18px", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ display: "flex", gap: 4 }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 7, height: 7, borderRadius: "50%", background: PURPLE, opacity: [1, 0.5, 0.2][i], animation: "pulse 1s infinite", animationDelay: `${i * 0.2}s` }} />)}</div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: PURPLE }}>Claude APIで答案生成中…</div>
-            <div style={{ fontSize: 11, color: "#7c3aed", marginTop: 2 }}>資料テキストをもとに整理された答案を作成しています</div>
-          </div>
-        </div>
-      )}
-
-      {/* Step3: AI答案 */}
-      {step >= 3 && aiAnswer && (
-        <div style={{ background: "#fff", border: `0.5px solid ${PURPLE}44`, borderRadius: 10, padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-            <div style={{ width: 20, height: 20, borderRadius: "50%", background: PURPLE, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff", flexShrink: 0 }}>✨</div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>AI生成答案</div>
-            <span style={{ fontSize: 10, fontWeight: 500, background: "#ede9fe", color: PURPLE, padding: "2px 8px", borderRadius: 10, marginLeft: "auto" }}>Claude APIによる生成</span>
-          </div>
-          <div style={{ background: "#fafafa", borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${PURPLE}`, fontSize: 13, lineHeight: 2, color: "#1a1a1a", whiteSpace: "pre-wrap" }}>
-            {aiAnswer}
-          </div>
-          <div style={{ marginTop: 10, fontSize: 11, color: "#aaa" }}>
-            ※ 上記答案は授業資料（{searchResults.slice(0, 8).map(r => `${r.doc.courseName} p.${r.page.pageNumber}`).join("、")}）を根拠に生成されました
-          </div>
-        </div>
-      )}
-
-      {/* ルールベースモードの場合 */}
-      {step >= 3 && !aiMode && !aiAnswer && searchResults.length > 0 && (
-        <div style={{ background: "#fff", border: "0.5px solid #e5e7eb", borderRadius: 10, padding: "14px 16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <div style={{ width: 20, height: 20, borderRadius: "50%", background: GREEN, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#fff", flexShrink: 0 }}>2</div>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>関連テキスト（ルールベース）</div>
-          </div>
-          {searchResults.slice(0, 4).map(({ doc, page }) => (
-            <div key={page.id} style={{ marginBottom: 10, padding: "10px 12px", background: "#f9fffe", borderRadius: 8, borderLeft: "2px solid #0F6E56" }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: GREEN, marginBottom: 4 }}>{doc.courseName} p.{page.pageNumber}</div>
-              <div style={{ fontSize: 13, color: "#1a1a1a", lineHeight: 1.8 }}>{page.content}</div>
-            </div>
-          ))}
-          <div style={{ marginTop: 8, padding: "8px 12px", background: "#fafafa", borderRadius: 8, fontSize: 11, color: "#888" }}>
-            💡 AIモードをONにするとClaude APIがこれらを整理した答案を生成します
-          </div>
-        </div>
+        </>
       )}
     </div>
   );
 
-  // ── RefsPanel ────────────────────────────────────────────────────────────────
-  const RefsPanel = (
-    <div style={{ padding: isMobile ? "12px" : "14px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ background: "#fff", borderRadius: 10, border: "0.5px solid #e5e7eb", padding: 12 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>参照ページ一覧</div>
-        {!searchResults.length && <div style={{ fontSize: 12, color: "#ccc" }}>検索結果がありません</div>}
-        {searchResults.slice(0, 10).map(({ doc, page, score }) => (
-          <div key={page.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "7px 0", borderBottom: "0.5px solid #f3f4f6" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: doc.color || GREEN, minWidth: 28, flexShrink: 0 }}>p.{page.pageNumber}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, color: "#333", lineHeight: 1.5 }}>{page.content.slice(0, 70)}{page.content.length > 70 ? "…" : ""}</div>
-              <div style={{ fontSize: 10, color: "#bbb", marginTop: 1 }}>{doc.courseName} · スコア {score}</div>
-            </div>
-          </div>
-        ))}
+  // ── HistoryPanel ──────────────────────────────────────────────────────────────
+  const HistoryPanel = (
+    <div style={{ overflowY: "auto", padding: isMobile ? "12px" : "16px", flex: 1 }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>答案履歴</div>
+        <div style={{ fontSize: 11, color: "#aaa" }}>{history.length}件</div>
+        {history.length > 0 && (
+          <button onClick={() => { if (confirm("履歴を全件削除しますか？")) setHistory([]); }}
+            style={{ fontSize: 10, color: "#e24b4a", background: "transparent", border: "none", cursor: "pointer", marginLeft: 8, fontFamily: "inherit" }}>
+            全削除
+          </button>
+        )}
       </div>
-      <div style={{ background: "#fff", borderRadius: 10, border: "0.5px solid #e5e7eb", padding: 12 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>使い方</div>
-        <div style={{ fontSize: 12, color: "#555", lineHeight: 2 }}>
-          1. PDFをアップロード<br />
-          2. AIモードをONにする<br />
-          3. 問題を入力して実行<br />
-          4. Claudeが資料を根拠に答案を生成
+      {history.length === 0 && (
+        <div style={{ textAlign: "center", padding: "40px 16px", color: "#ccc" }}>
+          <div style={{ fontSize: 28, marginBottom: 8 }}>🕐</div>
+          <div style={{ fontSize: 12 }}>まだ履歴がありません</div>
         </div>
-        <div style={{ marginTop: 10, padding: "8px 10px", background: "#f5f3ff", borderRadius: 8, fontSize: 11, color: PURPLE, lineHeight: 1.7 }}>
-          <b>AIモードの設定</b><br />
-          Vercel → Settings → Environment Variables<br />
-          <code style={{ fontFamily: "monospace", fontSize: 10 }}>ANTHROPIC_API_KEY</code> を追加してください
-        </div>
-      </div>
+      )}
+      {history.map(item => (
+        <HistoryItem key={item.id} item={item} onDelete={deleteHistory} onReuse={reuseHistory} />
+      ))}
     </div>
   );
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  // ── Mobile ────────────────────────────────────────────────────────────────────
   if (isMobile) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", fontFamily: "'Hiragino Sans','Yu Gothic UI',sans-serif", fontSize: 13, color: "#111", background: "#f7f7f5" }}>
         <div style={{ background: "#fff", borderBottom: "0.5px solid #e5e7eb", padding: "10px 14px", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-          <div style={{ fontWeight: 700, fontSize: 14 }}><span style={{ color: accentColor }}>Med</span> Answer Builder</div>
-          <span style={{ fontSize: 10, fontWeight: 500, background: aiMode ? "#ede9fe" : "#E1F5EE", color: aiMode ? PURPLE : GREEN, padding: "2px 7px", borderRadius: 10, marginLeft: "auto" }}>
+          <div style={{ fontWeight: 700, fontSize: 14 }}><span style={{ color: accentColor }}>Med</span> Answer</div>
+          <span style={{ fontSize: 10, fontWeight: 500, background: aiMode ? "#ede9fe" : "#E1F5EE", color: aiMode ? PURPLE : GREEN, padding: "2px 7px", borderRadius: 10 }}>
             {aiMode ? "✨ AI" : "📋 ルール"}
           </span>
-          {running && <div style={{ fontSize: 10, color: accentColor, fontWeight: 500 }}>{stepLabel}</div>}
-          {step >= 3 && !running && <div style={{ fontSize: 10, color: GREEN, fontWeight: 600 }}>✓ 完了</div>}
+          {running && <div style={{ fontSize: 10, color: accentColor, fontWeight: 500, marginLeft: "auto" }}>{stepLabel}</div>}
+          {!running && results.length > 0 && <div style={{ fontSize: 10, color: GREEN, fontWeight: 600, marginLeft: "auto" }}>✓ {results.length}問完了</div>}
         </div>
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {mobileTab === "docs" && DocPanel}
           {mobileTab === "input" && InputPanel}
           {mobileTab === "result" && ResultPanel}
-          {mobileTab === "refs" && RefsPanel}
+          {mobileTab === "history" && HistoryPanel}
         </div>
         <div style={{ display: "flex", background: "#fff", borderTop: "0.5px solid #e5e7eb", flexShrink: 0 }}>
           {NAV_ITEMS.map(item => (
             <button key={item.id} onClick={() => setMobileTab(item.id)}
-              style={{ flex: 1, padding: "10px 4px 12px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", borderTop: `2px solid ${mobileTab === item.id ? accentColor : "transparent"}` }}>
+              style={{ flex: 1, padding: "10px 4px 12px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit", borderTop: "2px solid " + (mobileTab === item.id ? accentColor : "transparent") }}>
               <span style={{ fontSize: 18 }}>{item.icon}</span>
               <span style={{ fontSize: 10, fontWeight: 500, color: mobileTab === item.id ? accentColor : "#aaa" }}>{item.label}</span>
             </button>
@@ -703,6 +740,8 @@ export default function App() {
     );
   }
 
+  // ── Desktop ───────────────────────────────────────────────────────────────────
+  const [desktopTab, setDesktopTab] = useState("result");
   return (
     <div style={{ display: "grid", gridTemplateColumns: "264px 1fr 272px", gridTemplateRows: "50px 1fr", height: "100vh", overflow: "hidden", fontFamily: "'Hiragino Sans','Yu Gothic UI',sans-serif", fontSize: 13, color: "#111", background: "#f7f7f5" }}>
       <div style={{ gridColumn: "1/-1", background: "#fff", borderBottom: "0.5px solid #e5e7eb", display: "flex", alignItems: "center", padding: "0 20px", gap: 12 }}>
@@ -710,22 +749,65 @@ export default function App() {
         <div style={{ fontSize: 11, color: "#aaa", paddingLeft: 12, borderLeft: "0.5px solid #e5e7eb" }}>授業資料に根拠づける答案作成</div>
         {running && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 12 }}>
-            <div style={{ display: "flex", gap: 3 }}>{[0, 1, 2].map(i => <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: accentColor, opacity: [1, 0.5, 0.2][i], animation: "pulse 1s infinite", animationDelay: `${i * 0.2}s` }} />)}</div>
+            <div style={{ display: "flex", gap: 3 }}>{[0,1,2].map(i => <div key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: accentColor, opacity: [1,0.5,0.2][i], animation: "pulse 1s infinite", animationDelay: i * 0.2 + "s" }} />)}</div>
             <span style={{ fontSize: 11, color: accentColor, fontWeight: 500 }}>{stepLabel}</span>
           </div>
         )}
-        {step >= 3 && !running && <div style={{ fontSize: 11, color: GREEN, fontWeight: 600, marginLeft: 12 }}>✓ 完了</div>}
+        {!running && results.length > 0 && <div style={{ fontSize: 11, color: GREEN, fontWeight: 600, marginLeft: 12 }}>✓ {results.length}問完了</div>}
         <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 500, background: aiMode ? "#ede9fe" : "#E1F5EE", color: aiMode ? PURPLE : GREEN, padding: "2px 9px", borderRadius: 10 }}>
-          {aiMode ? "✨ AIモード（Claude API）" : "📋 ルールベース"}
+          {aiMode ? "✨ AIモード" : "📋 ルールベース"}
         </span>
       </div>
+
+      {/* 左: 資料 + 問題入力 */}
       <div style={{ background: "#fafaf8", borderRight: "0.5px solid #e5e7eb", overflowY: "auto", display: "flex", flexDirection: "column" }}>
         {DocPanel}
         <div style={{ height: "0.5px", background: "#e5e7eb" }} />
         {InputPanel}
       </div>
-      {ResultPanel}
-      <div style={{ background: "#fafaf8", borderLeft: "0.5px solid #e5e7eb", overflowY: "auto" }}>{RefsPanel}</div>
+
+      {/* 中央: 答案 or 履歴タブ */}
+      <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ display: "flex", background: "#fff", borderBottom: "0.5px solid #e5e7eb", flexShrink: 0 }}>
+          {[["result", "📄 答案"], ["history", "🕐 履歴"]].map(([k, v]) => (
+            <button key={k} onClick={() => setDesktopTab(k)}
+              style={{ padding: "12px 20px", fontSize: 12, fontWeight: 500, cursor: "pointer", background: "transparent", border: "none", borderBottom: desktopTab === k ? "2px solid " + accentColor : "2px solid transparent", color: desktopTab === k ? accentColor : "#aaa", fontFamily: "inherit" }}>
+              {v}
+            </button>
+          ))}
+        </div>
+        {desktopTab === "result" ? ResultPanel : HistoryPanel}
+      </div>
+
+      {/* 右: 参考ページ */}
+      <div style={{ background: "#fafaf8", borderLeft: "0.5px solid #e5e7eb", overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ background: "#fff", borderRadius: 10, border: "0.5px solid #e5e7eb", padding: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>参照ページ</div>
+          {results.length === 0 && <div style={{ fontSize: 12, color: "#ccc" }}>答案生成後に表示されます</div>}
+          {results.flatMap((r, ri) =>
+            (r.searchResults || []).slice(0, 3).map(({ doc, page, score }) => (
+              <div key={ri + "_" + page.id} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "7px 0", borderBottom: "0.5px solid #f3f4f6" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: doc.color || GREEN, minWidth: 28, flexShrink: 0 }}>p.{page.pageNumber}</div>
+                <div>
+                  <div style={{ fontSize: 11, color: "#888", marginBottom: 2 }}>Q{ri + 1} · {doc.courseName}</div>
+                  <div style={{ fontSize: 12, color: "#333", lineHeight: 1.5 }}>{page.content.slice(0, 60)}{page.content.length > 60 ? "…" : ""}</div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <div style={{ background: "#fff", borderRadius: 10, border: "0.5px solid #e5e7eb", padding: 12 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: "#aaa", textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>使い方</div>
+          <div style={{ fontSize: 12, color: "#555", lineHeight: 2 }}>
+            ・複数問は番号付きで入力<br />
+            ・空行で区切っても可<br />
+            ・答案は参考ページと分離<br />
+            ・履歴タブで過去の答案を確認<br />
+            ・PDFボタンで印刷用に出力
+          </div>
+        </div>
+      </div>
+
       {modal && <DocModal doc={modal === "add" ? null : modal} onClose={() => setModal(null)} onSave={saveDoc} />}
       <style>{`@keyframes pulse{0%,100%{opacity:0.25}50%{opacity:1}}`}</style>
     </div>
