@@ -577,6 +577,7 @@ export default function App() {
   const [modal, setModal]         = useState(null);
   const [mobileTab, setMobileTab] = useState("input");
   const [isMobile, setIsMobile]   = useState(false);
+  const [desktopTab, setDesktopTab] = useState("result");
   const centerRef = useRef(null);
 
   useEffect(() => {
@@ -923,7 +924,6 @@ export default function App() {
   }
 
   // ── Desktop ───────────────────────────────────────────────────────────────────
-  const [desktopTab, setDesktopTab] = useState("result");
   return (
     <div style={{ display: "grid", gridTemplateColumns: "264px 1fr 272px", gridTemplateRows: "50px 1fr", height: "100vh", overflow: "hidden", fontFamily: "'Hiragino Sans','Yu Gothic UI',sans-serif", fontSize: 13, color: "#111", background: "#f7f7f5" }}>
       <div style={{ gridColumn: "1/-1", background: "#fff", borderBottom: "0.5px solid #e5e7eb", display: "flex", alignItems: "center", padding: "0 20px", gap: 12 }}>
