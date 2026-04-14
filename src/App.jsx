@@ -195,7 +195,8 @@ async function callClaudeAPI(question, searchResults, mode) {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "API error");
-  return data.answer;
+  // APIがanswer/refsを分離して返す
+  return { answer: data.answer || "", refs: data.refs || [] };
 }
 
 // ── PDF Export ────────────────────────────────────────────────────────────────
@@ -491,58 +492,70 @@ function DocModal({ doc, onClose, onSave }) {
 // ── History Item Component ────────────────────────────────────────────────────
 function HistoryItem({ item, onDelete, onReuse }) {
   const [expanded, setExpanded] = useState(false);
+  const dateStr = new Date(item.createdAt).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
   return (
-    <div style={{ background: "#fff", border: "0.5px solid #e5e7eb", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+    <div style={{ background: "#fff", border: "0.5px solid #e5e7eb", borderRadius: 10, marginBottom: 6, overflow: "hidden" }}>
+      {/* ヘッダー行 — タップで展開 */}
+      <div onClick={() => setExpanded(v => !v)}
+        style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", cursor: "pointer", userSelect: "none" }}>
+        {/* 展開アイコン */}
+        <div style={{ fontSize: 10, color: "#bbb", flexShrink: 0, transition: "transform 0.2s", transform: expanded ? "rotate(90deg)" : "rotate(0deg)" }}>▶</div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11, color: "#aaa", marginBottom: 3 }}>{new Date(item.createdAt).toLocaleDateString("ja-JP")} · {item.docNames}</div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#111", marginBottom: 4, lineHeight: 1.4 }}>
-            {item.questions.length === 1 ? item.questions[0] : item.questions.length + "問"}
+          <div style={{ fontSize: 11, color: "#bbb", marginBottom: 2 }}>{dateStr} · {item.docNames}</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: "#111", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {item.questions.length === 1
+              ? item.questions[0]
+              : item.questions.length + "問 — " + item.questions[0].slice(0, 25) + "…"}
           </div>
-          {item.questions.length > 1 && (
-            <div style={{ fontSize: 11, color: "#888" }}>{item.questions.slice(0, 2).map((q, i) => <div key={i}>Q{i + 1}. {q.slice(0, 40)}{q.length > 40 ? "…" : ""}</div>)}</div>
-          )}
         </div>
-        <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-          <button onClick={() => setExpanded(v => !v)}
-            style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid #e5e7eb", borderRadius: 6, background: "transparent", cursor: "pointer", color: "#666", fontFamily: "inherit" }}>
-            {expanded ? "閉じる" : "詳細"}
-          </button>
-          <button onClick={() => onReuse(item)}
-            style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid " + GREEN, borderRadius: 6, background: "transparent", cursor: "pointer", color: GREEN, fontFamily: "inherit", fontWeight: 600 }}>
-            再利用
-          </button>
-          <button onClick={() => onDelete(item.id)}
-            style={{ fontSize: 10, padding: "3px 8px", border: "0.5px solid #fecaca", borderRadius: 6, background: "transparent", cursor: "pointer", color: "#e24b4a", fontFamily: "inherit" }}>
-            削除
-          </button>
-        </div>
+        <div style={{ fontSize: 10, color: "#aaa", flexShrink: 0 }}>{item.questions.length}問</div>
       </div>
+
+      {/* 展開コンテンツ */}
       {expanded && (
-        <div style={{ marginTop: 12, borderTop: "0.5px solid #f3f4f6", paddingTop: 12 }}>
+        <div style={{ borderTop: "0.5px solid #f3f4f6", padding: "12px 14px" }}>
           {item.results.map((r, i) => (
-            <div key={i} style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 6 }}>Q{i + 1}. {r.question}</div>
-              <div style={{ fontSize: 12, color: "#1a1a1a", lineHeight: 1.9, background: "#f9fffe", borderRadius: 8, padding: "10px 12px", borderLeft: "2px solid " + GREEN, whiteSpace: "pre-wrap" }}>
+            <div key={i} style={{ marginBottom: i < item.results.length - 1 ? 16 : 0 }}>
+              {/* 問い */}
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#777", marginBottom: 6, padding: "5px 10px", background: "#f7f7f5", borderRadius: 6 }}>
+                Q{i + 1}. {r.question}
+              </div>
+              {/* 答案本文 */}
+              <div style={{ fontSize: 12, color: "#1a1a1a", lineHeight: 1.9, background: "#f9fffe", borderRadius: 8, padding: "10px 12px", borderLeft: "2px solid " + GREEN, whiteSpace: "pre-wrap", marginBottom: 6 }}>
                 {r.answer}
               </div>
+              {/* 参考ページ */}
               {r.refs && r.refs.length > 0 && (
-                <div style={{ marginTop: 6, fontSize: 11, color: "#888", background: "#f7f7f5", borderRadius: 6, padding: "8px 10px" }}>
-                  <div style={{ fontWeight: 600, marginBottom: 3 }}>参考ページ</div>
-                  {r.refs.map((ref, j) => <div key={j}>・{ref}</div>)}
+                <div style={{ fontSize: 11, color: "#888", background: "#f7f7f5", borderRadius: 6, padding: "7px 10px" }}>
+                  <span style={{ fontWeight: 700, color: "#aaa", marginRight: 6 }}>参考</span>
+                  {r.refs.join(" · ")}
                 </div>
               )}
             </div>
           ))}
-          <button onClick={() => exportToPdf(item.results.map(r => ({ ...r, createdAt: item.createdAt, docNames: item.docNames })))}
-            style={{ fontSize: 11, padding: "6px 12px", border: "0.5px solid #e5e7eb", borderRadius: 7, background: "transparent", cursor: "pointer", color: "#555", fontFamily: "inherit", marginTop: 4 }}>
-            📄 PDFで出力
-          </button>
+
+          {/* アクションボタン */}
+          <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
+            <button onClick={() => onReuse(item)}
+              style={{ flex: 1, fontSize: 11, padding: "7px 0", border: "0.5px solid " + GREEN, borderRadius: 7, background: "transparent", cursor: "pointer", color: GREEN, fontWeight: 600, fontFamily: "inherit" }}>
+              問いを再利用
+            </button>
+            <button onClick={() => exportToPdf(item.results.map(r => ({ ...r, createdAt: item.createdAt, docNames: item.docNames })))}
+              style={{ flex: 1, fontSize: 11, padding: "7px 0", border: "0.5px solid #e5e7eb", borderRadius: 7, background: "transparent", cursor: "pointer", color: "#555", fontFamily: "inherit" }}>
+              📄 PDF出力
+            </button>
+            <button onClick={() => onDelete(item.id)}
+              style={{ fontSize: 11, padding: "7px 10px", border: "0.5px solid #fecaca", borderRadius: 7, background: "transparent", cursor: "pointer", color: "#e24b4a", fontFamily: "inherit" }}>
+              削除
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
 }
+
 
 const NAV_ITEMS = [
   { id: "docs", icon: "📚", label: "資料" },
@@ -624,10 +637,8 @@ export default function App() {
       if (aiMode) {
         setStepLabel("Q" + (qi + 1) + "/" + questions.length + " Claude APIで生成中…");
         try {
-          const rawAnswer = await callClaudeAPI(question, sr, mode);
-          // 参考ページを本文から分離
-          const { cleanAnswer, refs } = parseAnswerAndRefs(rawAnswer, sr);
-          newResults.push({ question, answer: cleanAnswer, refs, searchResults: sr });
+          const { answer: aiAnswer, refs: aiRefs } = await callClaudeAPI(question, sr, mode);
+          newResults.push({ question, answer: aiAnswer, refs: aiRefs, searchResults: sr });
         } catch (err) {
           newErrors.push({ question, message: "API エラー: " + err.message });
         }
@@ -660,23 +671,6 @@ export default function App() {
     setRunning(false);
   }
 
-  // 回答から参考ページを分離する
-  function parseAnswerAndRefs(rawAnswer, sr) {
-    // 「根拠ページ：」以降を分離
-    const refSplit = rawAnswer.split(/\n+(?:根拠ページ[：:：]|参考ページ[：:：]|【参考[^】]*】)/);
-    let cleanAnswer = refSplit[0].trim();
-    let refsFromAnswer = refSplit[1] ? refSplit[1].trim().split("\n").filter(l => l.trim()) : [];
-
-    // 本文中の [p.XX] を除去
-    cleanAnswer = cleanAnswer.replace(/\s*\[[\w\s\.p]*p\.\d+\]/g, "").replace(/\s*（[\w\s]*p\.\d+）/g, "").trim();
-
-    // 検索結果から参考ページを生成
-    const srRefs = sr.slice(0, 6).map(({ doc, page }) =>
-      doc.title.split(" ")[0] + " p." + page.pageNumber + " — " + page.content.slice(0, 60) + "…"
-    );
-    const refs = refsFromAnswer.length > 0 ? refsFromAnswer : srRefs;
-    return { cleanAnswer, refs };
-  }
 
   function deleteDoc(id) {
     if (!confirm("この資料を削除しますか？")) return;

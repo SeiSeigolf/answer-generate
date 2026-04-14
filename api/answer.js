@@ -25,26 +25,35 @@ export default async function handler(req) {
   ).join('\n\n');
 
   const systemPrompt = `あなたは医学生の試験対策を支援するAIです。
-以下のルールを厳守してください：
+以下のルールを必ず守ってください：
 
-1. 回答は必ず「授業資料」に書かれている内容のみを根拠にする
-2. 資料に記載がない内容は「資料に記載なし」として本文に混ぜない
-3. 各主張の末尾に根拠ページを【資料名 p.XX】形式で明記する
-4. 医学的に正確で採点されやすい表現を使う
-5. 読みやすくまとまった文章で答案を構成する
-6. 資料の断片的なテキストをそのまま貼り付けず、必ず自分の言葉で整理して答案にする`;
+1. 答案本文には「p.XX」「【資料名 p.XX】」などのページ参照を一切書かない
+2. 答案本文は読みやすい文章のみにする
+3. 資料に書かれている内容だけを根拠にする
+4. 資料にない内容は本文に書かない
+5. 医学的に正確で採点されやすい表現を使う
+6. 資料の断片テキストをそのまま貼り付けず、整理した文章にする
+
+出力フォーマット：
+---答案---
+（ここに答案本文のみ。ページ番号・出典は一切書かない）
+
+---参考ページ---
+・資料名 p.XX
+・資料名 p.XX
+（参照したページのみ列挙）`;
 
   const userPrompt = `以下の授業資料を根拠として、問いに答えてください。
 
 【問い】
 ${question}
 
-【授業資料（根拠テキスト）】
+【授業資料】
 ${contextText}
 
 【指示】
 ${modeInstruction}
-答案の最後に「根拠ページ：」として参照したページ番号を列挙してください。`;
+上記のフォーマット通りに出力してください。答案本文にページ番号を書かないでください。`;
 
   try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -56,22 +65,32 @@ ${modeInstruction}
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-5',
-        max_tokens: 1024,
+        max_tokens: 1200,
         system: systemPrompt,
         messages: [{ role: 'user', content: userPrompt }],
       }),
     });
 
     const data = await response.json();
-
     if (!response.ok) {
       return new Response(JSON.stringify({ error: data.error?.message || 'API error' }), {
         status: response.status, headers: { 'Content-Type': 'application/json' }
       });
     }
 
-    const answer = data.content?.[0]?.text || '';
-    return new Response(JSON.stringify({ answer }), {
+    const raw = data.content?.[0]?.text || '';
+
+    // ---答案--- と ---参考ページ--- で分割
+    const answerMatch = raw.match(/---答案---\s*([\s\S]*?)(?=---参考ページ---|$)/);
+    const refsMatch = raw.match(/---参考ページ---\s*([\s\S]*?)$/);
+
+    const answer = answerMatch ? answerMatch[1].trim() : raw.trim();
+    const refsText = refsMatch ? refsMatch[1].trim() : '';
+    const refs = refsText
+      ? refsText.split('\n').map(l => l.replace(/^[・\-\*]\s*/, '').trim()).filter(l => l.length > 0)
+      : pages.slice(0, 6).map(p => p.docTitle.split(' ')[0] + ' p.' + p.pageNumber);
+
+    return new Response(JSON.stringify({ answer, refs }), {
       status: 200, headers: { 'Content-Type': 'application/json' }
     });
 
