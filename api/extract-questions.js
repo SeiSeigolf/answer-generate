@@ -25,8 +25,12 @@ export default async function handler(req) {
 - 「選べ」「誤っているもの」「正しいもの」「組合せ」「以下のうち」などの文脈があれば選択問題として扱う
 - 選択肢が途中で崩れていても、推定できる範囲で抽出する
 - 問題文と選択肢を分ける
+- 問題の直後や後半に「解答」「正解」「答え」「解説」が載っている場合がある
+- 正解が本文中に明記されている場合、correctAnswerに選択肢ラベルを入れる
+- 解説が載っている場合、explanationに短く整理して入れる
 - 正解が本文中に明記されていない場合、correctAnswerは空文字にする
 - ページ番号が推定できる場合はpageNumberに入れる
+- 問題番号が推定できる場合はquestionNumberに入れる
 - 分野が推定できる場合はfieldに短く入れる
 - 少しでも選択問題として復元できるものがあれば questions を空にしない
 - 説明文やMarkdownは不要。JSONのみ返す
@@ -36,11 +40,13 @@ JSON形式:
   "questions": [
     {
       "pageNumber": 1,
+      "questionNumber": 1,
       "questionText": "問題文",
       "choices": [
         { "label": "A", "text": "選択肢本文" }
       ],
       "correctAnswer": "",
+      "explanation": "",
       "field": "分野",
       "confidence": 0.8
     }

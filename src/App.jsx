@@ -352,10 +352,31 @@ function getChoiceMarkers(text) {
   }));
 }
 
-function buildParsedQuestion(source, rawText, stem, choiceParts, pageNumber, confidence, index, questionNumberOverride) {
+function normalizeAnswerText(text) {
+  return String(text || "")
+    .replace(/正解|解答|答え|回答|答|[:：は]/g, " ")
+    .split(/[,、\s]+/)
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(normalizeChoiceLabel)
+    .filter(Boolean)
+    .join(",");
+}
+
+function splitAnswerExplanation(text) {
+  const sourceText = String(text || "").trim();
+  const match = sourceText.match(/(?:^|\s)(?:正解|解答|回答|答え|答)\s*[:：は]?\s*([A-Ha-hア-ク①-⑩1-9１-９,、\s]+)(?:\s*(?:解説|理由|ポイント|補足)\s*[:：]?\s*([\s\S]*))?$/);
+  if (!match) return { body: sourceText, answer: "", explanation: "" };
+  const before = sourceText.slice(0, match.index).trim();
+  const answer = normalizeAnswerText(match[1]);
+  const explanation = (match[2] || "").trim();
+  return { body: before || sourceText, answer, explanation };
+}
+
+function buildParsedQuestion(source, rawText, stem, choiceParts, pageNumber, confidence, index, questionNumberOverride, extra = {}) {
   const qid = uid();
   const cleanedStem = stem.replace(/^\[p\.(\d+)\]\s*/, "").replace(/^(?:問|問題|Q)?\s*\d+[\s.．、:：]*/, "").trim();
-  const correctAnswer = choiceParts.find(c => c.isCorrect)?.label || "";
+  const correctAnswer = extra.answer || choiceParts.find(c => c.isCorrect)?.label || "";
   const choices = choiceParts
     .map(c => ({
       id: uid(),
@@ -378,8 +399,8 @@ function buildParsedQuestion(source, rawText, stem, choiceParts, pageNumber, con
       field: inferField(rawText, source.subject),
       stem: cleanedStem || rawText.slice(0, 180),
       rawText,
-      answer: correctAnswer ? normalizeChoiceLabel(correctAnswer) : "",
-      explanation: "",
+      answer: correctAnswer ? normalizeAnswerText(correctAnswer) : "",
+      explanation: extra.explanation || "",
       aiConfidence: confidence,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -394,7 +415,7 @@ function parseQuestionBlocksFromLines(pages, source) {
   for (const page of pages) {
     const lines = page.content.replace(/\r/g, "\n").split("\n").map(l => l.trim()).filter(Boolean);
     for (const line of lines) {
-      const qMatch = line.match(/^(\d{1,3})[.．]\s*(.+)$/);
+      const qMatch = line.match(/^(?:問|問題|Q)?\s*[\[【(（]?(\d{1,3})[\]】)）]?\s*[.．、:：)]?\s*(.+)$/);
       if (qMatch) {
         if (current) blocks.push(current);
         current = {
@@ -412,7 +433,8 @@ function parseQuestionBlocksFromLines(pages, source) {
   const parsed = [];
   for (const block of blocks) {
     const text = block.lines.join("\n").trim();
-    const oneLine = block.lines.join(" ").replace(/\s+/g, " ").trim();
+    const answerInfo = splitAnswerExplanation(block.lines.join(" ").replace(/\s+/g, " ").trim());
+    const oneLine = answerInfo.body;
     const markers = getChoiceMarkers(oneLine).filter(m => m.index > 0);
     if (markers.length < 2) continue;
     const stem = oneLine.slice(0, markers[0].index).trim();
@@ -421,7 +443,10 @@ function parseQuestionBlocksFromLines(pages, source) {
       const end = i + 1 < markers.length ? markers[i + 1].index : oneLine.length;
       return { label: m.label, text: oneLine.slice(start, end) };
     });
-    const item = buildParsedQuestion(source, text, stem, choiceParts, block.pageNumber, 0.78, parsed.length + 1, block.number);
+    const item = buildParsedQuestion(source, text, stem, choiceParts, block.pageNumber, 0.78, parsed.length + 1, block.number, {
+      answer: answerInfo.answer,
+      explanation: answerInfo.explanation,
+    });
     if (item) parsed.push(item);
   }
   return parsed;
@@ -449,7 +474,8 @@ function parseMultipleChoiceQuestions(pages, source) {
 
   for (const chunk of chunks) {
     const chunkWithoutPage = chunk.replace(/\[p\.\d+\]\s*/g, "").trim();
-    const body = chunkWithoutPage.replace(/^(?:問|問題|Q)?\s*\d+[\s.．、:：]*/, "").trim();
+    const answerInfo = splitAnswerExplanation(chunkWithoutPage);
+    const body = answerInfo.body.replace(/^(?:問|問題|Q)?\s*\d+[\s.．、:：]*/, "").trim();
     const markers = getChoiceMarkers(body).filter(m => m.index > 0);
     if (markers.length < 2) continue;
     const stem = body.slice(0, markers[0].index).trim();
@@ -460,7 +486,10 @@ function parseMultipleChoiceQuestions(pages, source) {
       const end = i + 1 < markers.length ? markers[i + 1].index : body.length;
       return { label: m.label.trim(), text: body.slice(start, end) };
     });
-    const item = buildParsedQuestion(source, rawText, stem, choiceParts, pageMatch ? parseInt(pageMatch[1]) : 1, 0.62, parsed.length + 1);
+    const item = buildParsedQuestion(source, rawText, stem, choiceParts, pageMatch ? parseInt(pageMatch[1]) : 1, 0.62, parsed.length + 1, null, {
+      answer: answerInfo.answer,
+      explanation: answerInfo.explanation,
+    });
     if (item) parsed.push(item);
   }
 
@@ -476,16 +505,20 @@ function parseMultipleChoiceQuestions(pages, source) {
       .filter(Boolean);
     for (const block of qBlocks.length ? qBlocks : [text]) {
       const normalizedBlock = block.replace(/[\(（]([A-Ha-hア-ク①-⑩1-9１-９])[\)）]/g, "$1.");
-      const markers = getChoiceMarkers(normalizedBlock).filter(m => m.index > 0);
+      const answerInfo = splitAnswerExplanation(normalizedBlock);
+      const markers = getChoiceMarkers(answerInfo.body).filter(m => m.index > 0);
       if (markers.length < 2) continue;
       const choiceParts = [];
       for (let i = 0; i < markers.length; i++) {
         const start = markers[i].index + markers[i].raw.length;
-        const end = i + 1 < markers.length ? markers[i + 1].index : normalizedBlock.length;
-        choiceParts.push({ label: markers[i].label, text: normalizedBlock.slice(start, end) });
+        const end = i + 1 < markers.length ? markers[i + 1].index : answerInfo.body.length;
+        choiceParts.push({ label: markers[i].label, text: answerInfo.body.slice(start, end) });
       }
-      const stem = normalizedBlock.slice(0, markers[0].index).trim();
-      const item = buildParsedQuestion(source, normalizedBlock, stem, choiceParts, page.pageNumber, 0.5, inlineParsed.length + 1);
+      const stem = answerInfo.body.slice(0, markers[0].index).trim();
+      const item = buildParsedQuestion(source, normalizedBlock, stem, choiceParts, page.pageNumber, 0.5, inlineParsed.length + 1, null, {
+        answer: answerInfo.answer,
+        explanation: answerInfo.explanation,
+      });
       if (item) inlineParsed.push(item);
     }
   }
@@ -521,7 +554,9 @@ async function extractQuestionsByAI(pages, source) {
       choiceParts,
       q.pageNumber || 1,
       q.confidence || 0.78,
-      i + 1
+      i + 1,
+      q.questionNumber || null,
+      { answer: q.correctAnswer || "", explanation: q.explanation || "" }
     );
   }).filter(Boolean);
 }
